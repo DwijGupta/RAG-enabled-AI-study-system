@@ -90,7 +90,43 @@ export default function UploadModal({
       }
 
       const data = await response.json();
-      const res = data.result || {};
+      let res = data.result || {};
+
+      // If async background job was queued (202 Accepted)
+      if (data.status === 'queued' && data.job_id) {
+        setUploadQueue(prev => prev.map(item => ({
+          ...item,
+          progressText: 'Queued in background worker...'
+        })));
+
+        res = await new Promise((resolve, reject) => {
+          const interval = setInterval(async () => {
+            try {
+              const pollRes = await fetch(`/api/ingestion/status/${data.job_id}`);
+              if (!pollRes.ok) {
+                clearInterval(interval);
+                return reject(new Error('Failed to retrieve processing status'));
+              }
+              const job = await pollRes.json();
+              setUploadQueue(prev => prev.map(item => ({
+                ...item,
+                progressText: job.stage || 'Processing document...'
+              })));
+
+              if (job.status === 'completed') {
+                clearInterval(interval);
+                resolve(job.result || {});
+              } else if (job.status === 'failed') {
+                clearInterval(interval);
+                reject(new Error(job.error || 'Ingestion failed'));
+              }
+            } catch (e) {
+              clearInterval(interval);
+              reject(e);
+            }
+          }, 750);
+        });
+      }
 
       setUploadQueue(prev => prev.map(item => ({
         ...item,
@@ -172,7 +208,42 @@ export default function UploadModal({
       }
 
       const data = await response.json();
-      const res = data.result || {};
+      let res = data.result || {};
+
+      if (data.status === 'queued' && data.job_id) {
+        setUploadQueue(prev => prev.map(item => ({
+          ...item,
+          progressText: 'Queued in background worker...'
+        })));
+
+        res = await new Promise((resolve, reject) => {
+          const interval = setInterval(async () => {
+            try {
+              const pollRes = await fetch(`/api/ingestion/status/${data.job_id}`);
+              if (!pollRes.ok) {
+                clearInterval(interval);
+                return reject(new Error('Failed to retrieve processing status'));
+              }
+              const job = await pollRes.json();
+              setUploadQueue(prev => prev.map(item => ({
+                ...item,
+                progressText: job.stage || 'Fetching and indexing web content...'
+              })));
+
+              if (job.status === 'completed') {
+                clearInterval(interval);
+                resolve(job.result || {});
+              } else if (job.status === 'failed') {
+                clearInterval(interval);
+                reject(new Error(job.error || 'URL import failed'));
+              }
+            } catch (e) {
+              clearInterval(interval);
+              reject(e);
+            }
+          }, 750);
+        });
+      }
 
       setUploadQueue(prev => prev.map(item => ({
         ...item,

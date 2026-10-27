@@ -22,6 +22,7 @@ import {
 import { citationsDatabase, tutorModes } from '../data/mockData.js';
 
 export default function ChatPanel({
+  notebookTitle = 'Active Study Session',
   messages,
   onSendMessage,
   onSelectCitation,
@@ -80,11 +81,11 @@ export default function ChatPanel({
   };
 
   const renderFormattedContent = (content, citations = []) => {
-    // Replace citation tags like [cit-1], [Doc 1], [REF-1] with interactive citation chips
-    const parts = content.split(/(\[(?:cit-\d+|Doc \d+(?::[^\]]+)?|REF-\d+)\])/gi);
+    // Replace citation tags like [cit-1], [Doc 1], [REF-1], [REF-1: p. 4] with interactive citation chips
+    const parts = content.split(/(\[(?:cit-\d+|Doc \d+(?::[^\]]+)?|REF-\d+(?::[^\]]+)?)\])/gi);
 
     return parts.map((part, index) => {
-      const citMatch = part.match(/\[(cit-\d+|Doc \d+(?::[^\]]+)?|REF-\d+)\]/i);
+      const citMatch = part.match(/\[(cit-\d+|Doc \d+(?::[^\]]+)?|REF-\d+(?::[^\]]+)?)\]/i);
       if (citMatch) {
         const fullTag = citMatch[1];
         const numMatch = fullTag.match(/\d+/);
@@ -165,10 +166,10 @@ export default function ChatPanel({
   };
 
   const suggestedPrompts = [
-    'Explain the intuition behind Momentum',
-    'Compare Batch vs Stochastic Gradient Descent',
-    'What causes vanishing gradients in deep networks?',
-    'Give me an exam-style practice problem'
+    'Explain the core concepts step by step',
+    'Summarize key formulas and definitions',
+    'Test my understanding with an exam-style question',
+    'Give me a concrete real-world example'
   ];
 
   return (
@@ -194,7 +195,7 @@ export default function ChatPanel({
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            Gradient Descent & Loss Optimization
+            {notebookTitle}
           </span>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>•</span>
           <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>

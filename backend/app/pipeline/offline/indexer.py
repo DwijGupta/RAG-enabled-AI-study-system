@@ -1,7 +1,8 @@
 import os
 import uuid
+import asyncio
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from rank_bm25 import BM25Okapi
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -74,7 +75,8 @@ class OfflineIndexer:
         title: str,
         source_type: str,
         db: AsyncSession,
-        original_filename: str = ""
+        original_filename: str = "",
+        progress_callback: Optional[Callable[[int, str], None]] = None
     ) -> Dict[str, Any]:
         """
         Unified real-time offline pipeline execution for any source:
@@ -84,6 +86,9 @@ class OfflineIndexer:
         - Raw text or markdown notes
         - Web URLs & YouTube lectures
         """
+        if progress_callback:
+            progress_callback(10, "Parsing document structure and pages...")
+
         doc_id = str(uuid.uuid4())
         ext = os.path.splitext(original_filename or file_path_or_content)[1].lower()
 
@@ -120,6 +125,9 @@ class OfflineIndexer:
             source_type = "pdf"
             pages_data = dual_parser.parse_pdf(file_path_or_content, doc_id)
 
+        if progress_callback:
+            progress_callback(30, f"Extracted {len(pages_data)} pages. Creating contextual chunks...")
+
         # Create Document in DB
         db_doc = Document(
             id=doc_id,
@@ -150,6 +158,9 @@ class OfflineIndexer:
         raw_chunks = contextual_chunker.create_hierarchical_chunks(pages_data)
         enriched_chunks = await contextual_chunker.add_context_lines(raw_chunks, doc_title=title)
 
+        if progress_callback:
+            progress_callback(55, f"Created {len(enriched_chunks)} chunks. Generating embeddings & concept graph concurrently...")
+
         # Pre-assign UUID chunk IDs for deterministic alignment across vector store and graph
         all_chunk_ids = []
         for i, c in enumerate(enriched_chunks):
@@ -159,15 +170,26 @@ class OfflineIndexer:
             c["doc_title"] = title
             all_chunk_ids.append(chunk_id)
 
-        # 3. Extract Concept Graph & Misconceptions aligned with source_chunk_ids
+        # 3. Prepare Embeddings & Extract Concept Graph Concurrently
+        texts_to_embed = [
+            f"{c.get('contextual_line', '')}\n\n{c['content']}"
+            for c in enriched_chunks
+        ]
         combined_sample_text = "\n\n".join([p["text"] for p in pages_data[:5]])
-        kg_result = await graph_extractor.extract_and_store(
+
+        # Execute CPU-bound batch embeddings in thread pool while Gemini concept extraction runs concurrently
+        embed_task = asyncio.to_thread(embedding_service.embed_documents, texts_to_embed, 32)
+        kg_task = graph_extractor.extract_and_store(
             combined_sample_text,
             domain=title,
             source_chunk_ids=all_chunk_ids
         )
+        dense_vectors, kg_result = await asyncio.gather(embed_task, kg_task)
 
-        # Also store extracted concepts in relational DB
+        if progress_callback:
+            progress_callback(80, "Storing extracted graph nodes and vectors...")
+
+        # Store extracted concepts in relational DB
         for cp in kg_result.concepts:
             existing_c = await db.execute(select(Concept).where(Concept.name.ilike(cp.name)))
             if not existing_c.scalars().first():
@@ -179,13 +201,6 @@ class OfflineIndexer:
                 )
                 db.add(db_c)
         await db.commit()
-
-        # 4. Prepare Embeddings & Index into Qdrant & BM25 in real-time
-        texts_to_embed = [
-            f"{c.get('contextual_line', '')}\n\n{c['content']}"
-            for c in enriched_chunks
-        ]
-        dense_vectors = embedding_service.embed_documents(texts_to_embed)
 
         qdrant_points = []
         for i, c in enumerate(enriched_chunks):
@@ -233,6 +248,9 @@ class OfflineIndexer:
 
         db_doc.status = "indexed"
         await db.commit()
+
+        if progress_callback:
+            progress_callback(100, "Knowledge base indexing complete!")
 
         logger.info(
             "Successfully indexed source '%s' (%s): %d pages, %d chunks, %d concepts, %d communities.",

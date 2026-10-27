@@ -45,7 +45,13 @@ class Settings(BaseSettings):
     LANGFUSE_HOST: str = "http://localhost:3001"
     LANGFUSE_ENABLED: bool = True
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=[
+            str(Path(__file__).resolve().parent.parent.parent / ".env"),
+            ".env"
+        ],
+        extra="ignore"
+    )
 
 
 settings = Settings()

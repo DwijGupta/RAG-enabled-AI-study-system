@@ -1,9 +1,11 @@
 version: "3.8"
 
 # ==============================================================================
-# AI Study Buddy System - Production Ops & Evaluation Orchestration
-# Zero Data Loss: All stateful storage (Qdrant, Neo4j, PostgreSQL, Backend DB)
-# is isolated in dedicated persistent Docker volumes.
+# AI Study Buddy System - Lightweight Docker Compose Setup
+# Designed for fast local development and light resource usage:
+# - Frontend: React Vite SPA via Nginx (Port 3000)
+# - Backend: FastAPI Server with SQLite & NetworkX graph (Port 8000)
+# - Vector DB: Lightweight Qdrant (Ports 6333, 6334)
 # ==============================================================================
 
 networks:
@@ -13,62 +15,12 @@ networks:
 volumes:
   qdrant_storage:
     name: studybuddy_qdrant_data
-  neo4j_data:
-    name: studybuddy_neo4j_data
-  neo4j_import:
-    name: studybuddy_neo4j_import
-  neo4j_logs:
-    name: studybuddy_neo4j_logs
-  langfuse_pg_data:
-    name: studybuddy_langfuse_postgres_data
   backend_data:
     name: studybuddy_backend_storage
 
 services:
   # ----------------------------------------------------------------------------
-  # 1. PostgreSQL (Langfuse Observability Backend Store)
-  # ----------------------------------------------------------------------------
-  langfuse-db:
-    image: postgres:16-alpine
-    container_name: studybuddy-langfuse-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-studybuddy_secure_pg_pass_2026}
-      POSTGRES_DB: langfuse
-    volumes:
-      - langfuse_pg_data:/var/lib/postgresql/data
-    networks:
-      - studybuddy-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ----------------------------------------------------------------------------
-  # 2. Langfuse Server (Self-Hosted Telemetry & LLM Observability)
-  # ----------------------------------------------------------------------------
-  langfuse-server:
-    image: langfuse/langfuse:2
-    container_name: studybuddy-langfuse-server
-    restart: unless-stopped
-    depends_on:
-      langfuse-db:
-        condition: service_healthy
-    ports:
-      - "3001:3000"
-    environment:
-      DATABASE_URL: "postgresql://postgres:${LANGFUSE_DB_PASSWORD:-studybuddy_secure_pg_pass_2026}@langfuse-db:5432/langfuse"
-      NEXTAUTH_URL: "http://localhost:3001"
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-studybuddy_auth_secret_key_minimum_32_characters}
-      SALT: ${LANGFUSE_SALT:-studybuddy_salt_secret_key_minimum_32_characters}
-      TELEMETRY_ENABLED: "false"
-    networks:
-      - studybuddy-net
-
-  # ----------------------------------------------------------------------------
-  # 3. Qdrant Vector Database (Dense BGE-M3 Embeddings & Traces)
+  # 1. Qdrant Vector Database (Lightweight Vector Engine)
   # ----------------------------------------------------------------------------
   qdrant:
     image: qdrant/qdrant:v1.8.4
@@ -88,34 +40,7 @@ services:
       retries: 5
 
   # ----------------------------------------------------------------------------
-  # 4. Neo4j Graph Database (Prerequisite DAG & GraphRAG Communities)
-  # ----------------------------------------------------------------------------
-  neo4j:
-    image: neo4j:5.18.0
-    container_name: studybuddy-neo4j
-    restart: unless-stopped
-    ports:
-      - "7474:7474"
-      - "7687:7687"
-    environment:
-      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-studybuddy_graph_pass_2026}
-      NEO4J_PLUGINS: '["apoc"]'
-      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
-      NEO4J_dbms_security_procedures_allow__csv__import: "true"
-    volumes:
-      - neo4j_data:/data
-      - neo4j_import:/var/lib/neo4j/import
-      - neo4j_logs:/logs
-    networks:
-      - studybuddy-net
-    healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p ${NEO4J_PASSWORD:-studybuddy_graph_pass_2026} 'RETURN 1' || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-
-  # ----------------------------------------------------------------------------
-  # 5. FastAPI Application Backend (12-Step Deterministic Pipeline)
+  # 2. FastAPI Application Backend (Lightweight Setup)
   # ----------------------------------------------------------------------------
   backend:
     build:
@@ -126,28 +51,19 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
-      neo4j:
-        condition: service_healthy
-      langfuse-server:
-        condition: service_started
     ports:
       - "8000:8000"
     environment:
       PROJECT_NAME: "Learner-State-Aware RAG Educational Tutor"
-      DEBUG: "false"
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      DEBUG: "true"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       DATABASE_URL: "sqlite+aiosqlite:///app/data/studybuddy.db"
       STORAGE_DIR: "/app/data/storage"
       DATA_DIR: "/app/data"
       QDRANT_URL: "http://qdrant:6333"
-      NEO4J_URI: "bolt://neo4j:7687"
-      NEO4J_USER: "neo4j"
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-studybuddy_graph_pass_2026}
-      LANGFUSE_HOST: "http://langfuse-server:3000"
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      LANGFUSE_ENABLED: "true"
+      NEO4J_URI: ""
+      LANGFUSE_ENABLED: "false"
     volumes:
       - backend_data:/app/data
     networks:
@@ -159,7 +75,7 @@ services:
       retries: 3
 
   # ----------------------------------------------------------------------------
-  # 6. React Vite Frontend (Reverse Proxy & Student Interface)
+  # 3. React Vite Frontend (Reverse Proxy & Student Interface)
   # ----------------------------------------------------------------------------
   frontend:
     build:

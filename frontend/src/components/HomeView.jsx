@@ -129,7 +129,7 @@ export default function HomeView({
                 style={{ padding: '7px 14px', fontSize: '0.82rem' }}
               >
                 <Layers size={14} />
-                <span>Review 5 due flashcards</span>
+                <span>Review flashcards</span>
               </button>
             </div>
           </div>
@@ -246,24 +246,9 @@ export default function HomeView({
                     <span>{nb.sourcesCount} sources</span>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{
-                      width: '60px',
-                      height: '5px',
-                      borderRadius: '3px',
-                      backgroundColor: 'var(--border-subtle)',
-                      overflow: 'hidden'
-                    }}>
-                      <div style={{
-                        width: `${nb.progress}%`,
-                        height: '100%',
-                        backgroundColor: 'var(--accent-primary)'
-                      }} />
-                    </div>
-                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      {nb.progress}%
-                    </span>
-                  </div>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--accent-primary)', fontWeight: 500 }}>
+                    Open notebook →
+                  </span>
                 </div>
               </div>
             ))}

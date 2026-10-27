@@ -26,7 +26,7 @@ class EmbeddingService:
                 logger.warning("Local embedding model fallback active (%s).", str(e2))
                 self.model = None
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+    def embed_documents(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
         if not texts:
             return []
         
@@ -34,11 +34,11 @@ class EmbeddingService:
             try:
                 # FastEmbed returns a generator of numpy arrays
                 if hasattr(self.model, "embed"):
-                    embeddings = list(self.model.embed(texts))
+                    embeddings = list(self.model.embed(texts, batch_size=batch_size))
                     return [emb.tolist() for emb in embeddings]
                 # SentenceTransformer
                 elif hasattr(self.model, "encode"):
-                    embeddings = self.model.encode(texts, normalize_embeddings=True)
+                    embeddings = self.model.encode(texts, batch_size=batch_size, normalize_embeddings=True)
                     return embeddings.tolist()
             except Exception as e:
                 logger.error("Error generating embeddings: %s", str(e))

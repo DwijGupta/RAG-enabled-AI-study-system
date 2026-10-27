@@ -17,7 +17,7 @@ class GeminiClient:
     """
     def __init__(self):
         self.api_key = os.environ.get("GEMINI_API_KEY") or settings.GEMINI_API_KEY or ""
-        self.default_model = settings.GEMINI_MODEL or "gemini-3.8-flash"
+        self.default_model = settings.GEMINI_MODEL or "gemini-3.5-flash-lite"
         self._exhausted_models = set()
         self._client: Optional[genai.Client] = None
         self._init_client()
@@ -40,8 +40,15 @@ class GeminiClient:
         self._init_client()
 
     def _get_candidate_models(self) -> List[str]:
-        # Active models with default_model prioritized first
-        models = [self.default_model, "gemini-3.5-flash-lite", "gemini-2.0-flash"]
+        # High-availability model ladder (bypasses quota bottlenecks)
+        models = [
+            self.default_model,
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-3.8-flash"
+        ]
         seen = set()
         candidates = []
         for m in models:
@@ -114,6 +121,7 @@ class GeminiClient:
 
         config = types.GenerateContentConfig(
             temperature=temperature,
+            max_output_tokens=4096,
             system_instruction=system if system else None
         )
 

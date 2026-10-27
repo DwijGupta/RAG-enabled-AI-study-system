@@ -267,7 +267,6 @@ export default function Sidebar({
             label="Flashcards" 
             active={currentView === 'flashcards'} 
             onClick={() => setCurrentView('flashcards')} 
-            badge="5 due"
           />
           <NavItem 
             icon={<CheckCircle2 size={16} />} 
@@ -280,7 +279,6 @@ export default function Sidebar({
             label="Learning Progress" 
             active={currentView === 'progress'} 
             onClick={() => setCurrentView('progress')} 
-            badge="74%"
           />
         </div>
 

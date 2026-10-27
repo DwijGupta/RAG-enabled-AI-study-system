@@ -1,4 +1,5 @@
 import re
+import asyncio
 import logging
 from typing import List, Dict, Any, Optional
 from app.core.llm_client import llm_client
@@ -78,30 +79,41 @@ class ContextualChunker:
 
     async def add_context_lines(self, chunks: List[Dict[str, Any]], doc_title: str) -> List[Dict[str, Any]]:
         """
-        Adds an LLM-generated 1-sentence contextual preface line for each chunk
-        (Anthropic / Qwen Contextual Retrieval pattern).
+        Adds an LLM-generated contextual preface line concurrently with semaphore gating.
         """
-        llm_available = True
-        for c in chunks:
-            if not llm_available:
-                c["contextual_line"] = f"Discusses {c['section_title']} in {doc_title}."
-                continue
+        if not chunks:
+            return chunks
 
-            snippet = c["content"][:400]
+        sem = asyncio.Semaphore(5)
+
+        async def _enrich_chunk(c: Dict[str, Any]):
+            snippet = c["content"][:300]
+            section = c.get("section_title") or f"Page {c['page_number']}"
+            fallback_line = f"Explains {section} from {doc_title}."
             prompt = (
                 f"Document: {doc_title}\n"
-                f"Section: {c['section_title']}\n"
+                f"Section: {section}\n"
                 f"Content excerpt: {snippet}\n\n"
-                f"Provide a single brief sentence (under 20 words) giving the exact context of what this chunk explains."
+                f"Provide a single brief sentence (under 18 words) giving the exact context of what this chunk explains."
             )
-            try:
-                line = await llm_client.generate(prompt=prompt, temperature=0.1)
-                clean_line = line.strip().replace('"', '').replace('\n', ' ')
-                c["contextual_line"] = clean_line
-            except Exception as e:
-                logger.warning("Failed to generate context line (%s). Using heuristic.", str(e))
-                llm_available = False
-                c["contextual_line"] = f"Discusses {c['section_title']} in {doc_title}."
+            async with sem:
+                try:
+                    line = await llm_client.generate(prompt=prompt, temperature=0.1)
+                    clean_line = line.strip().replace('"', '').replace('\n', ' ')
+                    c["contextual_line"] = clean_line or fallback_line
+                except Exception:
+                    c["contextual_line"] = fallback_line
+            return c
+
+        tasks = []
+        for i, c in enumerate(chunks):
+            if i < 15:
+                tasks.append(_enrich_chunk(c))
+            else:
+                c["contextual_line"] = f"Discusses {c.get('section_title', '')} in {doc_title}."
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
         return chunks
 

@@ -21,6 +21,12 @@ class GraphStore:
         self._load_community_cache()
 
     def _init_connection(self):
+        if not settings.NEO4J_URI:
+            logger.info("No NEO4J_URI configured. Using embedded NetworkX graph store.")
+            self.driver = None
+            self.use_neo4j = False
+            return
+
         driver = None
         try:
             from neo4j import GraphDatabase

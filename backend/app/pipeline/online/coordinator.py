@@ -97,7 +97,7 @@ class OnlineTutoringPipeline:
             query=user_query,
             candidates=fused,
             learner_mastery=learner_p,
-            top_k=5
+            top_k=8
         )
         telemetry_manager.end_span(
             rerank_span,

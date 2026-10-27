@@ -57,7 +57,15 @@ export default function App() {
 
   // Tutor Mode & Chat Messages
   const [tutorMode, setTutorMode] = useState('Learn');
-  const [messages, setMessages] = useState(initialMessages);
+  const [messages, setMessages] = useState([
+    {
+      id: 'msg-welcome',
+      sender: 'tutor',
+      timestamp: 'Just now',
+      mode: 'Learn',
+      content: "### Welcome to AI Study Buddy!\nUpload course textbooks, lecture slides, or notes on the left, or ask any question to start learning."
+    }
+  ]);
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Chat Memory & Sessions
@@ -378,7 +386,7 @@ Ask any new question to continue studying!`
 
       if (res.ok) {
         const data = await res.json();
-        const replyCitations = data.citations && data.citations.length > 0 ? data.citations : ['cit-1'];
+        const replyCitations = data.citations && data.citations.length > 0 ? data.citations : [];
         const tutorReply = {
           id: `msg-${Date.now() + 1}`,
           sender: 'tutor',
@@ -401,86 +409,42 @@ Ask any new question to continue studying!`
 
         fetchSessions();
         return;
+      } else {
+        const errorData = await res.text();
+        let errMsg = `Server returned status ${res.status}`;
+        try {
+          const parsed = JSON.parse(errorData);
+          if (parsed.detail) errMsg = parsed.detail;
+        } catch (_) {
+          if (errorData) errMsg = errorData.slice(0, 200);
+        }
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `msg-err-${Date.now()}`,
+            sender: 'tutor',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            mode: 'Notice',
+            content: `⚠️ **Could not generate answer:** ${errMsg}\n\nPlease check that your Gemini API key is valid and the backend is running.`
+          }
+        ]);
+        setIsGenerating(false);
       }
     } catch (err) {
-      console.warn('Real-time chat API request failed, falling back to offline educational response:', err);
-    }
-
-    // Dynamic educational fallback if backend is offline or during cold start
-    setTimeout(() => {
-      let replyContent = '';
-      let replyCitations = ['cit-1'];
-      let quizQuestion = null;
-
-      const lower = text.toLowerCase();
-
-      if (lower.includes('momentum') || lower.includes('oscillation')) {
-        replyContent = `### Momentum in High-Curvature Loss Landscapes
-
-Standard gradient descent often struggles in ravines where the surface curves much more steeply in one dimension than in another. 
-
-**Polyak's Heavy-Ball Momentum Update:**
-Rather than computing steps purely on the current gradient $\\nabla L(w_t)$, we maintain a velocity vector $v_t$ that accumulates an exponentially decaying moving average of past gradients [cit-1]:
-
-$$v_{t+1} = \\gamma v_t + \\eta \\nabla L(w_t)$$
-$$w_{t+1} = w_t - v_{t+1}$$
-
-Where:
-- $\\gamma \\in [0.9, 0.99]$: The momentum damping coefficient.
-- $\\eta$: The learning rate step size.
-
-Because oscillating components across the ravine walls alternate in sign, they cancel each other out over time. Meanwhile, the consistent gradients pointing along the gentle valley floor reinforce each other, driving rapid convergence [cit-2].`;
-        replyCitations = ['cit-1', 'cit-2'];
-      } else if (lower.includes('vanishing') || lower.includes('backprop')) {
-        replyContent = `### The Vanishing Gradient Problem
-
-In deep feedforward architectures, error signals are propagated backwards through layers via recursive matrix multiplications [cit-1]:
-
-$$\\frac{\\partial L}{\\partial W^{(1)}} = \\frac{\\partial L}{\\partial z^{(L)}} \\prod_{l=2}^{L} W^{(l)T} \\text{diag}(\\sigma'(z^{(l-1)})) \\cdot a^{(0)T}$$
-
-When using saturating non-linearities such as Sigmoid $\\sigma(z) = \\frac{1}{1 + e^{-z}}$, the derivative reaches a maximum value of only $0.25$ at $z=0$. 
-
-As these fractions multiply across 10 or 20 layers, the backpropagated gradient norm approaches zero exponentially ($0.25^{10} \\approx 9.5 \\times 10^{-7}$), leaving early feature extractors effectively untuned [cit-1].`;
-        replyCitations = ['cit-1'];
-      } else {
-        replyContent = `### Source-Grounded Explanation
-
-Based on your active textbooks and notes [cit-1], we analyze this problem by breaking down the underlying mathematical formulation:
-
-$$w_{t+1} = w_t - \\eta \\cdot \\nabla L(w_t)$$
-
-Key takeaways:
-- Ensure the step size satisfies the Lipschitz continuity bound $\\eta < \\frac{2}{L}$ to prevent divergence.
-- Normalize input features so contour ellipses are circular rather than highly eccentric ravines [cit-2].`;
-        replyCitations = ['cit-1', 'cit-2'];
-        quizQuestion = {
-          id: `chk-${Date.now()}`,
-          question: 'Follow-up check: Why does feature standardization (zero mean, unit variance) speed up gradient descent?',
-          options: [
-            'It changes the global minimum location',
-            'It makes loss contour curves circular, reducing transverse zig-zag oscillations',
-            'It eliminates the need to compute partial derivatives',
-            'It guarantees the loss function becomes concave'
-          ],
-          correctIndex: 1,
-          explanation: 'Standardized features prevent ravines where one weight requires tiny steps while another requires huge steps, allowing isotropic learning rates.'
-        };
-      }
-
-      const tutorReply = {
-        id: `msg-${Date.now() + 1}`,
-        sender: 'tutor',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        mode: tutorMode,
-        content: replyContent,
-        citations: replyCitations,
-        quizQuestion: quizQuestion
-      };
-
-      setMessages((prev) => [...prev, tutorReply]);
+      console.error('Chat API request error:', err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-err-${Date.now()}`,
+          sender: 'tutor',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          mode: 'Offline',
+          content: `⚠️ **Connection Error:** Could not reach backend server at \`/api/chat/message\` (${err.message}).\n\nPlease ensure the backend server is running on port 8000.`
+        }
+      ]);
       setIsGenerating(false);
-      setActiveCitationId(replyCitations[0]);
-    }, 800);
+    }
   };
 
   const activeSources = sources.filter((s) => s.active);
@@ -591,6 +555,7 @@ Key takeaways:
 
               {/* Center Column: AI Tutoring & Chat Workspace */}
               <ChatPanel
+                notebookTitle={currentNotebook?.title || 'Active Study Session'}
                 messages={messages}
                 onSendMessage={handleSendMessage}
                 onSelectCitation={handleSelectCitation}

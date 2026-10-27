@@ -23,6 +23,7 @@ export default function StudyToolsView({
   notebookTitle = 'Machine Learning Fundamentals'
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [copiedGuide, setCopiedGuide] = useState(false);
 
   // Flashcards State
   const [cards, setCards] = useState(mockFlashcards);
@@ -36,6 +37,18 @@ export default function StudyToolsView({
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [quizFinished, setQuizFinished] = useState(false);
   const [quizScore, setQuizScore] = useState(0);
+
+  const handleCopyGuide = () => {
+    const text = `${mockStudyGuide.title}\n\n` +
+      mockStudyGuide.sections.map(s => `## ${s.title}\n${s.content || (s.concepts ? s.concepts.map(c => `- ${c.name}: ${c.description}`).join('\n') : '')}`).join('\n\n');
+    navigator.clipboard.writeText(text);
+    setCopiedGuide(true);
+    setTimeout(() => setCopiedGuide(false), 2000);
+  };
+
+  const handleExportGuide = () => {
+    window.print();
+  };
 
   // Flashcard Handlers
   const handleNextCard = () => {
@@ -174,13 +187,21 @@ export default function StudyToolsView({
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button className="btn btn-secondary btn-sm">
-                    <Copy size={13} />
-                    <span>Copy</span>
+                  <button 
+                    onClick={handleCopyGuide}
+                    className="btn btn-secondary btn-sm"
+                    title="Copy entire study guide text"
+                  >
+                    {copiedGuide ? <Check size={13} color="var(--status-success-badge)" /> : <Copy size={13} />}
+                    <span>{copiedGuide ? 'Copied!' : 'Copy'}</span>
                   </button>
-                  <button className="btn btn-secondary btn-sm">
+                  <button 
+                    onClick={handleExportGuide}
+                    className="btn btn-secondary btn-sm"
+                    title="Print or export as PDF"
+                  >
                     <Download size={13} />
-                    <span>Export PDF</span>
+                    <span>Print / PDF</span>
                   </button>
                 </div>
               </div>
