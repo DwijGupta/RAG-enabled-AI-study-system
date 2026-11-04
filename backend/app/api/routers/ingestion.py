@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.db import get_db, AsyncSessionLocal
 from app.core.models import Document, PageImage
 from app.pipeline.offline.indexer import offline_indexer
+from app.core.security import sanitize_filename, validate_safe_url, expensive_rate_limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ingestion", tags=["Document Ingestion"])
@@ -112,7 +113,7 @@ async def _run_background_indexing(
             logger.error("Background ingestion failed for job %s: %s", job_id, str(e), exc_info=True)
             job_manager.fail_job(job_id, str(e))
 
-@router.post("/upload")
+@router.post("/upload", dependencies=[Depends(expensive_rate_limiter)])
 async def upload_file(
     file: UploadFile = File(...),
     title: str = Form(None),
@@ -120,9 +121,11 @@ async def upload_file(
 ):
     """
     Non-blocking multi-format document and image ingestion endpoint.
+    Includes anti-directory traversal filename sanitization and maximum file size enforcement.
     Immediately returns HTTP 202 Accepted with a job_id for client progress tracking.
     """
-    ext = os.path.splitext(file.filename)[1].lower()
+    clean_filename = sanitize_filename(file.filename)
+    ext = os.path.splitext(clean_filename)[1].lower()
     if ext not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
@@ -130,20 +133,39 @@ async def upload_file(
         )
 
     detected_type = SUPPORTED_EXTENSIONS[ext]
-    doc_title = title or file.filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ").title()
+    doc_title = title or clean_filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ").title()
     
     uploads_dir = os.path.join(settings.STORAGE_DIR, "uploads")
     os.makedirs(uploads_dir, exist_ok=True)
-    safe_name = f"{os.urandom(8).hex()}_{file.filename}"
+    safe_name = f"{os.urandom(8).hex()}_{clean_filename}"
     upload_path = os.path.join(uploads_dir, safe_name)
 
-    # Save uploaded file payload to disk
-    with open(upload_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    # Save uploaded file payload with streaming chunk size-limit enforcement
+    total_bytes = 0
+    chunk_size = 1024 * 1024
+    try:
+        with open(upload_path, "wb") as buffer:
+            while chunk := await file.read(chunk_size):
+                total_bytes += len(chunk)
+                if total_bytes > settings.max_upload_bytes:
+                    buffer.close()
+                    if os.path.exists(upload_path):
+                        os.remove(upload_path)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File exceeds maximum allowed upload size of {settings.MAX_UPLOAD_SIZE_MB}MB."
+                    )
+                buffer.write(chunk)
+    except HTTPException:
+        raise
+    except Exception as e:
+        if os.path.exists(upload_path):
+            os.remove(upload_path)
+        raise HTTPException(status_code=500, detail=f"Failed to save file payload: {str(e)}")
 
     job_id = str(uuid.uuid4())
-    job_manager.create_job(job_id, title=doc_title, filename=file.filename)
-    logger.info("Queued %s (%s) with job_id %s -> %s", detected_type, file.filename, job_id, upload_path)
+    job_manager.create_job(job_id, title=doc_title, filename=clean_filename)
+    logger.info("Queued %s (%s, %d bytes) with job_id %s -> %s", detected_type, clean_filename, total_bytes, job_id, upload_path)
 
     # Dispatch to background task worker to prevent thread blocking
     background_tasks.add_task(
@@ -152,7 +174,7 @@ async def upload_file(
         file_path=upload_path,
         title=doc_title,
         source_type=detected_type,
-        filename=file.filename
+        filename=clean_filename
     )
 
     return JSONResponse(
@@ -162,11 +184,11 @@ async def upload_file(
             "job_id": job_id,
             "message": f"Document '{doc_title}' queued for processing.",
             "title": doc_title,
-            "filename": file.filename
+            "filename": clean_filename
         }
     )
 
-@router.post("/upload-pdf")
+@router.post("/upload-pdf", dependencies=[Depends(expensive_rate_limiter)])
 async def upload_pdf(
     file: UploadFile = File(...),
     title: str = Form(None),
@@ -175,21 +197,32 @@ async def upload_pdf(
     """Backward compatibility alias for PDF upload."""
     return await upload_file(file=file, title=title, background_tasks=background_tasks)
 
-@router.post("/import-url")
+@router.post("/import-url", dependencies=[Depends(expensive_rate_limiter)])
 async def import_url(
     url: str = Form(...),
     title: str = Form(None),
     background_tasks: BackgroundTasks = BackgroundTasks()
 ):
-    """Ingest web documentation or YouTube educational lecture via asynchronous background worker."""
+    """
+    Ingest web documentation or YouTube educational lecture via asynchronous background worker.
+    Includes strict Anti-SSRF URL validation to prevent unauthorized internal network scanning.
+    """
+    clean_url = url.strip()
+    is_safe, error_msg = validate_safe_url(clean_url)
+    if not is_safe:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Security verification failed: {error_msg}"
+        )
+
     doc_title = title or "Web Document"
     job_id = str(uuid.uuid4())
-    job_manager.create_job(job_id, title=doc_title, filename=url.strip())
+    job_manager.create_job(job_id, title=doc_title, filename=clean_url)
 
     background_tasks.add_task(
         _run_background_indexing,
         job_id=job_id,
-        file_path=url.strip(),
+        file_path=clean_url,
         title=doc_title,
         source_type="web",
         filename="web.html"
@@ -202,7 +235,7 @@ async def import_url(
             "job_id": job_id,
             "message": f"URL '{doc_title}' queued for processing.",
             "title": doc_title,
-            "filename": url.strip()
+            "filename": clean_url
         }
     )
 

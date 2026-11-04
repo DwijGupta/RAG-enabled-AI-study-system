@@ -5,6 +5,12 @@ __pycache__
 .pytest_cache
 tests
 .env
+.env.*
+*.env
+config.json
+secrets.json
+*.pem
+*.key
 .git
 .gitignore
 *.db

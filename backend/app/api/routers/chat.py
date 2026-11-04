@@ -4,9 +4,13 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete, desc
 
 from app.core.db import get_db, AsyncSessionLocal
+from app.core.models import InteractionTrace, User
+from app.core.security import expensive_rate_limiter
 from app.pipeline.online.coordinator import online_pipeline
+from app.pipeline.online.memory import _ACTIVE_SESSIONS
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["Chat & Streaming Tutor"])
@@ -29,11 +33,7 @@ class ChatResponse(BaseModel):
     trace_id: Optional[str] = None
 
 
-from sqlalchemy import select, delete, desc
-from app.core.models import InteractionTrace, User
-from app.pipeline.online.memory import _ACTIVE_SESSIONS
-
-@router.post("/message", response_model=ChatResponse)
+@router.post("/message", response_model=ChatResponse, dependencies=[Depends(expensive_rate_limiter)])
 async def chat_message(req: ChatRequest, db: AsyncSession = Depends(get_db)):
     # Ensure user exists to satisfy foreign key constraint
     user = await db.get(User, req.user_id)

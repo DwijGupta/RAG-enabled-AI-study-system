@@ -7,12 +7,30 @@
 # ------------------------------------------------------------------------------
 .env
 .env.*
-!.env.example
+.env.local
+.env.*.local
 *.env
+*.env.*
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+config.json
+secrets.json
+credentials.json
+service-account*.json
 *.pem
 *.key
 *.cert
 *.crt
+*.pfx
+*.p12
+*.token
+
+# Secret scanning artifacts & local audit logs
+gitleaks-report.json
+!.gitleaks.toml
+.gitleaks.cache
+gitguardian*
 
 # ------------------------------------------------------------------------------
 # Databases, Vector Indices & Persistent State

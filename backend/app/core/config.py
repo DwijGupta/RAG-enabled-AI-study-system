@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -44,6 +45,29 @@ class Settings(BaseSettings):
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_HOST: str = "http://localhost:3001"
     LANGFUSE_ENABLED: bool = True
+
+    # API Security & Access Controls
+    API_KEY_AUTH_ENABLED: bool = False
+    API_SECRET_KEY: str = ""  # If non-empty or API_KEY_AUTH_ENABLED=True, enforces X-API-Key / Bearer auth
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000"
+
+    # API Rate Limiting
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_PER_MINUTE: int = 120
+    RATE_LIMIT_EXPENSIVE_PER_MINUTE: int = 30
+
+    # Payload & Upload Security
+    MAX_UPLOAD_SIZE_MB: int = 50
+
+    @property
+    def cors_origins(self) -> List[str]:
+        if not self.ALLOWED_ORIGINS:
+            return ["http://localhost:3000", "http://127.0.0.1:3000"]
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def max_upload_bytes(self) -> int:
+        return self.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
     model_config = SettingsConfigDict(
         env_file=[

@@ -1,0 +1,47 @@
+# ==============================================================================
+# Gitleaks Configuration for AI Study Buddy
+# Scans commits locally and in CI to prevent credential leakage
+# ==============================================================================
+
+title = "AI Study Buddy Gitleaks Rule Profile"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowed placeholder examples and mock files"
+paths = [
+    '''(?i)\.env\.example$''',
+    '''(?i)backend/\.env\.example$''',
+    '''(?i)tests/.*''',
+    '''(?i)frontend/node_modules/.*''',
+    '''package-lock\.json''',
+]
+regexes = [
+    '''your_gemini_api_key_here''',
+    '''your_google_gemini_api_key_here''',
+    '''mock_ci_key''',
+    '''AIzaSy[A-Za-z0-9_-]{33}''',
+]
+
+[[rules]]
+id = "google-gemini-api-key"
+description = "Detected Google Gemini AI Studio or Google Cloud API Key"
+regex = '''(?i)(AIza[0-9A-Za-z\\-_]{35}|AQ\.[A-Za-z0-9_\\-]{40,})'''
+secretGroup = 1
+keywords = [
+    "AIza",
+    "AQ.",
+    "gemini",
+]
+
+[[rules]]
+id = "generic-api-key-assignment"
+description = "Detected hardcoded API Key or Secret in configuration"
+regex = '''(?i)(api_key|apikey|secret_key|secret|password)\s*[:=]\s*["']([A-Za-z0-9_\-]{20,})["']'''
+secretGroup = 2
+keywords = [
+    "api_key",
+    "secret_key",
+    "password",
+]

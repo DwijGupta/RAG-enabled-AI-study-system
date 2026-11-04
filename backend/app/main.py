@@ -1,7 +1,7 @@
 import os
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -9,6 +9,12 @@ from app.core.config import settings
 from app.core.db import init_db
 from app.core.ollama_client import ollama_client
 from app.core.graph_db import graph_store
+from app.core.security import (
+    verify_api_key,
+    SecurityHeadersMiddleware,
+    standard_rate_limiter
+)
+
 from app.api.routers.chat import router as chat_router
 from app.api.routers.ingestion import router as ingestion_router
 from app.api.routers.graph import router as graph_router
@@ -68,27 +74,36 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Middleware
+# OWASP Recommended Security Headers
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Secure CORS Middleware Configuration
+cors_origins = settings.cors_origins
+is_wildcard = cors_origins == ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=cors_origins,
+    allow_credentials=not is_wildcard,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"]
 )
 
 # Mount static files for page inspector
 os.makedirs(settings.STORAGE_DIR, exist_ok=True)
 app.mount("/storage", StaticFiles(directory=settings.STORAGE_DIR), name="storage")
 
-# Include Routers
-app.include_router(chat_router, prefix="/api")
-app.include_router(ingestion_router, prefix="/api")
-app.include_router(graph_router, prefix="/api")
-app.include_router(learner_router, prefix="/api")
-app.include_router(assessment_router, prefix="/api")
-app.include_router(review_router, prefix="/api")
+# Include Routers with API Key enforcement & default rate limiting
+auth_dependency = [Depends(verify_api_key), Depends(standard_rate_limiter)]
 
+app.include_router(chat_router, prefix="/api", dependencies=auth_dependency)
+app.include_router(ingestion_router, prefix="/api", dependencies=auth_dependency)
+app.include_router(graph_router, prefix="/api", dependencies=auth_dependency)
+app.include_router(learner_router, prefix="/api", dependencies=auth_dependency)
+app.include_router(assessment_router, prefix="/api", dependencies=auth_dependency)
+app.include_router(review_router, prefix="/api", dependencies=auth_dependency)
+
+# Unauthenticated public health check for Docker and uptime probes
 @app.get("/api/health")
 async def health_check():
     brain_info = await ollama_client.check_health()
@@ -99,7 +114,11 @@ async def health_check():
         "brain": brain_info,
         "graph_nodes": graph_store.nx_graph.number_of_nodes(),
         "graph_edges": graph_store.nx_graph.number_of_edges(),
-        "using_neo4j": graph_store.use_neo4j
+        "using_neo4j": graph_store.use_neo4j,
+        "security": {
+            "api_key_required": bool(settings.API_SECRET_KEY) or settings.API_KEY_AUTH_ENABLED,
+            "rate_limiting_active": settings.RATE_LIMIT_ENABLED
+        }
     }
 
 if __name__ == "__main__":

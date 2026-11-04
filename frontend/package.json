@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "scan:secrets": "python ../scripts/scan_secrets.py",
+    "setup:hooks": "python ../scripts/setup_hooks.py"
   },
   "dependencies": {
     "react": "^18.2.0",

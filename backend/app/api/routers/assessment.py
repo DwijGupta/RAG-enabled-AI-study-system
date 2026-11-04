@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
+from app.core.security import expensive_rate_limiter
 from app.pipeline.closed_loop.assessment import assessment_engine
 from app.pipeline.closed_loop.state_update import state_updater
 
@@ -23,7 +24,7 @@ class SubmitQuizRequest(BaseModel):
     correct_answer: str
     used_hint: bool = False
 
-@router.post("/generate")
+@router.post("/generate", dependencies=[Depends(expensive_rate_limiter)])
 async def generate_quiz(req: GenerateQuizRequest):
     question = await assessment_engine.generate_diagnostic_question(
         concept_name=req.concept_name,
@@ -31,7 +32,7 @@ async def generate_quiz(req: GenerateQuizRequest):
     )
     return question.model_dump()
 
-@router.post("/submit")
+@router.post("/submit", dependencies=[Depends(expensive_rate_limiter)])
 async def submit_quiz(req: SubmitQuizRequest, db: AsyncSession = Depends(get_db)):
     evaluation = await assessment_engine.evaluate_answer(
         question=req.question_text,
