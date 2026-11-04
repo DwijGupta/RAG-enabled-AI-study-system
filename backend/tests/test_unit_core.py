@@ -1,4 +1,10 @@
+import os
+import sys
 import pytest
+
+# Ensure backend directory is in sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from app.core.config import settings
 from app.pipeline.online.leak_filter import leak_filter
 from app.pipeline.closed_loop.fsrs_scheduler import fsrs_scheduler
