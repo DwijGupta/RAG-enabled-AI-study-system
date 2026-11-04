@@ -37,14 +37,7 @@ jobs:
           NEO4J_URI: ""
           QDRANT_URL: ""
         run: |
-          output=$(python -m pytest tests/test_unit_core.py tests/test_pipeline.py tests/test_api_security.py -v 2>&1) || {
-            code=$?
-            echo "$output"
-            summary=$(echo "$output" | tail -n 25 | sed ':a;N;$!ba;s/\n/%0A/g')
-            echo "::error title=Pytest Failure::$summary"
-            exit $code
-          }
-          echo "$output"
+          python -m pytest tests/test_unit_core.py tests/test_pipeline.py tests/test_api_security.py -v
 
   frontend-build:
     name: Frontend Build & Type Check
